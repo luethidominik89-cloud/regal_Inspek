@@ -15,7 +15,7 @@ if 'inspections' not in st.session_state:
 if 'edit_index' not in st.session_state:
     st.session_state.edit_index = None
 
-st.title("🛡️ Regal-Inspektion mit Inhaltsverzeichnis")
+st.title("🛡️ Regal-Inspektion")
 
 # --- STAMMDATEN ---
 with st.expander("📋 Kunden- & Standortdetails", expanded=True):
@@ -40,7 +40,6 @@ with col1:
     regal_typ = st.selectbox("Regalanlage", ["Palettenregal", "Fachbodenregal", "Kragarmregal", "Durchlaufregal", "Sonstiges"], index=0)
     bauteil = st.selectbox("Bauteil", ["Stütze", "Traverse", "Rammschutz", "Aussteifung"], index=0)
     
-    # Dynamische Label je nach Bauteil
     if bauteil == "Stütze":
         pos_label = "Position (z.B. vorne links, 3. Pfosten)"
     elif bauteil == "Traverse":
@@ -50,23 +49,22 @@ with col1:
     pos = st.text_input(pos_label, value=current_data["Position"])
 
 with col2:
-    gefahr = st.radio("Gefahrenstufe wählen (🟢 🟡 🔴)", ["Grün", "Gelb", "ROT"], index=["Grün", "Gelb", "ROT"].index(current_data["Stufe"]), horizontal=True)
+    gefahr = st.radio("Gefahrenstufe wählen", ["Grün", "Gelb", "ROT"], index=["Grün", "Gelb", "ROT"].index(current_data["Stufe"]), horizontal=True)
     mangel = st.selectbox("Mangel", ["Stapleranprall", "Sicherungsstift fehlt", "Bodenanker lose", "Überladung", "Verformung", "Sonstiges"])
     kommentar = st.text_input("Zusatz-Kommentar (optional)", value=current_data.get("Mangel", "").split(": ")[-1] if ":" in current_data["Mangel"] else "")
     massnahme = st.selectbox("Maßnahme", ["Beobachten", "Tausch binnen 4 Wo.", "SOFORT SPERREN", "Stift ersetzen", "Anker nachziehen"])
 
 with col3:
-    st.write("📸 **Fotos (optional)**")
+    st.write("📸 **Fotos**")
     f1 = st.camera_input("Foto 1", key="cam1")
     f2 = st.camera_input("Foto 2", key="cam2")
 
 # --- SPEICHER LOGIK ---
 b_col1, b_col2 = st.columns(2)
-
 if st.session_state.edit_index is None:
     if b_col1.button("✅ Schaden speichern", use_container_width=True):
-        if not regal_nr or not pos:
-            st.error("Bitte Regal-Nummer und Position angeben!")
+        if not regal_nr:
+            st.error("Bitte Regal-Nummer angeben!")
         else:
             current_photos = []
             for f in [f1, f2]:
@@ -75,12 +73,10 @@ if st.session_state.edit_index is None:
                     path = f"img_{datetime.now().timestamp()}.jpg"
                     img.save(path)
                     current_photos.append(path)
-            
             st.session_state.inspections.append({
                 "Regal": regal_nr, "Typ": regal_typ, "Bauteil": bauteil, "Position": pos,
                 "Stufe": gefahr, "Mangel": f"{mangel}: {kommentar}", "Massnahme": massnahme, "Fotos": current_photos
             })
-            st.success("Gespeichert!")
             st.rerun()
 else:
     if b_col1.button("💾 Änderungen übernehmen", use_container_width=True):
@@ -97,16 +93,15 @@ else:
 # --- LISTE UND PDF ---
 if st.session_state.inspections:
     st.divider()
-    st.subheader("📋 Erfasste Mängel")
     for idx, item in enumerate(st.session_state.inspections):
         ci, ce = st.columns([8, 2])
         icon = "🟢" if item['Stufe'] == "Grün" else "🟡" if item['Stufe'] == "Gelb" else "🔴"
-        ci.write(f"{icon} **#{idx+1} Regal {item['Regal']}** - {item['Bauteil']} ({item['Position']})")
+        ci.write(f"{icon} **#{idx+1} Regal {item['Regal']}** - {item['Bauteil']}")
         if ce.button("✏️ Bearbeiten", key=f"edit_{idx}"):
             st.session_state.edit_index = idx
             st.rerun()
 
-    if st.button("📄 PDF-Bericht mit Inhaltsverzeichnis erstellen", type="primary"):
+    if st.button("📄 PDF-Bericht erstellen", type="primary"):
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=20)
         
@@ -116,24 +111,22 @@ if st.session_state.inspections:
         pdf.cell(0, 40, "Inspektionsbericht", ln=True, align='C')
         pdf.set_font("Arial", '', 14)
         pdf.cell(0, 10, f"Kunde: {kunde}", ln=True)
-        pdf.cell(0, 10, f"Standort: {standort} | Bereich: {gebaeude}", ln=True)
-        pdf.cell(0, 10, f"Prüfer: {inspektor} | Datum: {datetime.now().strftime('%d.%m.%Y')}", ln=True)
+        pdf.cell(0, 10, f"Standort: {standort} | Prüfer: {inspektor}", ln=True)
+        pdf.ln(10)
         
-        # 2. Inhaltsverzeichnis (Seite 2 vorbereiten)
+        # 2. Inhaltsverzeichnis (Seite 2)
         pdf.add_page()
         pdf.set_font("Arial", 'B', 18)
         pdf.cell(0, 15, "Inhaltsverzeichnis", ln=True)
         pdf.ln(5)
-        toc_page = 2
         toc_list = []
 
         # 3. Details
         for item in st.session_state.inspections:
             pdf.add_page()
-            curr_page = pdf.page_no()
-            toc_list.append((item['Regal'], item['Stufe'], item['Bauteil'], curr_page))
+            toc_list.append((item['Regal'], item['Stufe'], item['Bauteil'], pdf.page_no()))
             
-            # Kopfzeile farbig
+            # Kopfzeile
             if item['Stufe'] == "ROT": pdf.set_fill_color(255, 200, 200)
             elif item['Stufe'] == "Gelb": pdf.set_fill_color(255, 243, 200)
             else: pdf.set_fill_color(200, 255, 200)
@@ -142,13 +135,9 @@ if st.session_state.inspections:
             pdf.cell(0, 15, f"REGAL: {item['Regal']} - {item['Stufe']}", ln=True, fill=True)
             
             pdf.set_font("Arial", 'B', 13)
-            pdf.cell(0, 8, "Bauteil:", ln=True)
+            pdf.cell(0, 8, "Bauteil & Position:", ln=True)
             pdf.set_font("Arial", '', 13)
             pdf.cell(0, 8, f"{item['Bauteil']}", ln=True)
-            
-            pdf.set_font("Arial", 'B', 13)
-            pdf.cell(0, 8, "Position / Ebene:", ln=True)
-            pdf.set_font("Arial", '', 13)
             pdf.cell(0, 8, f"{item['Position']}", ln=True)
             
             pdf.set_font("Arial", 'B', 13)
@@ -164,13 +153,19 @@ if st.session_state.inspections:
                     pdf.image(p, x=x_img, y=y_img, w=50)
                     x_img += 55
         
-        # Inhaltsverzeichnis befüllen
-        pdf.page = toc_page
+        # Inhaltsverzeichnis befüllen (KEINE EMOJIS HIER)
+        pdf.page = 2
         pdf.set_y(35)
         pdf.set_font("Arial", '', 12)
         for entry in toc_list:
-            status_text = "🔴" if entry[1] == "ROT" else "🟡" if entry[1] == "Gelb" else "🟢"
-            pdf.cell(0, 10, f"{status_text} Regal {entry[0]} ({entry[2]}) .................... Seite {entry[3]}", ln=True)
+            # Wir zeichnen einen kleinen farbigen Kreis statt Emojis
+            if entry[1] == "ROT": pdf.set_draw_color(200, 0, 0); pdf.set_fill_color(255, 0, 0)
+            elif entry[1] == "Gelb": pdf.set_draw_color(200, 150, 0); pdf.set_fill_color(255, 243, 0)
+            else: pdf.set_draw_color(0, 100, 0); pdf.set_fill_color(0, 255, 0)
+            
+            pdf.ellipse(pdf.get_x(), pdf.get_y() + 2, 4, 4, style='FD')
+            pdf.set_x(20)
+            pdf.cell(0, 10, f"Regal {entry[0]} ({entry[2]}) .................... Seite {entry[3]}", ln=True)
 
         pdf_bytes = pdf.output(dest='S').encode('latin-1', 'replace')
         st.download_button("📥 PDF Bericht laden", data=pdf_bytes, file_name=f"Bericht_{kunde}.pdf")
