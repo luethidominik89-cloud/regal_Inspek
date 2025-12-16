@@ -52,8 +52,27 @@ col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     regal_nr = st.text_input("Regal-Nummer", value=data["Regal"])
     regal_typ = st.selectbox("Regalanlage", ["Palettenregal", "Fachbodenregal", "Kragarmregal", "Durchlaufregal", "Sonstiges"], index=0)
-    bauteil = st.selectbox("Bauteil", ["Stütze", "Traverse", "Rammschutz", "Aussteifung"], index=0)
-    pos = st.text_input("Genaue Position", value=data["Position"], placeholder="z.B. Ebene 2, von links")
+    
+    # Bauteil Auswahl
+    bauteil_liste = ["Stütze", "Traverse", "Rammschutz", "Aussteifung", "Fachboden"]
+    bauteil_index = bauteil_liste.index(data["Bauteil"]) if data["Bauteil"] in bauteil_liste else 0
+    bauteil = st.selectbox("Bauteil", bauteil_liste, index=bauteil_index)
+    
+    # DYNAMISCHE POSITIONSEINGABE basierend auf Bauteil
+    if bauteil == "Stütze":
+        pos_label = "Position (z.B. vorne links, 3. Pfosten)"
+        pos_placeholder = "vorne rechts"
+    elif bauteil == "Traverse":
+        pos_label = "Ebene und Feld (z.B. Ebene 3, Feld 12)"
+        pos_placeholder = "E3, F12"
+    elif bauteil == "Rammschutz":
+        pos_label = "Position (z.B. Ecke links, Regal-Stirnseite)"
+        pos_placeholder = "Ecke vorne"
+    else:
+        pos_label = "Genaue Position"
+        pos_placeholder = "z.B. Bodenzone"
+        
+    pos = st.text_input(pos_label, value=data["Position"], placeholder=pos_placeholder)
 
 with col2:
     st.write("**Gefahrenstufe:**")
@@ -130,17 +149,16 @@ if st.session_state.inspections:
         stats_data = pd.DataFrame(st.session_state.inspections)['Stufe'].value_counts()
         pdf.cell(0, 8, f"- Gesamtanzahl der Prüfpunkte: {len(st.session_state.inspections)}", ln=True)
         pdf.set_text_color(0, 100, 0)
-        pdf.cell(0, 8, f"- Grüne Gefahrenstufe (IO / Überwachung): {stats_data.get('Grün', 0)}", ln=True)
+        pdf.cell(0, 8, f"- Grüne Gefahrenstufe: {stats_data.get('Grün', 0)}", ln=True)
         pdf.set_text_color(200, 120, 0)
-        pdf.cell(0, 8, f"- Gelbe Gefahrenstufe (Reparatur 4 Wo.): {stats_data.get('Gelb', 0)}", ln=True)
+        pdf.cell(0, 8, f"- Gelbe Gefahrenstufe: {stats_data.get('Gelb', 0)}", ln=True)
         pdf.set_text_color(200, 0, 0)
-        pdf.cell(0, 8, f"- ROTE GEFAHRENSTUFE (SOFORT SPERREN): {stats_data.get('ROT', 0)}", ln=True)
+        pdf.cell(0, 8, f"- ROTE GEFAHRENSTUFE: {stats_data.get('ROT', 0)}", ln=True)
         pdf.set_text_color(0, 0, 0)
         
         # --- SEITE 2ff: DETAILS ---
         pdf.add_page()
         for item in st.session_state.inspections:
-            # Balkenfarbe setzen
             if item['Stufe'] == "ROT": pdf.set_fill_color(255, 200, 200)
             elif item['Stufe'] == "Gelb": pdf.set_fill_color(255, 243, 200)
             else: pdf.set_fill_color(200, 255, 200)
@@ -150,7 +168,6 @@ if st.session_state.inspections:
             pdf.set_font("Arial", '', 10)
             pdf.multi_cell(0, 6, f"Bauteil: {item['Bauteil']} | Position: {item['Position']}\nMangel: {item['Mangel']}\nMassnahme: {item['Massnahme']}")
             
-            # Bilder auf EINER Ebene nebeneinander
             if item['Fotos']:
                 pdf.ln(2)
                 y_img_start = pdf.get_y()
@@ -159,7 +176,7 @@ if st.session_state.inspections:
                     if os.path.exists(p_path):
                         pdf.image(p_path, x=x_img_pos, y=y_img_start, w=40)
                         x_img_pos += 45
-                pdf.set_y(y_img_start + 32) # Cursor unter die Bildreihe setzen
+                pdf.set_y(y_img_start + 32)
 
             pdf.ln(5)
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
