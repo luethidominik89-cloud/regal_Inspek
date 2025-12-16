@@ -44,11 +44,9 @@ with col1:
     b_idx = bauteil_liste.index(current_data["Bauteil"]) if current_data["Bauteil"] in bauteil_liste else 0
     bauteil = st.selectbox("Bauteil", bauteil_liste, index=b_idx)
     
-    pos_label = "Position / Ebene / Feld"
-    pos = st.text_input(pos_label, value=current_data["Position"])
+    pos = st.text_input("Genaue Position / Ebene / Feld", value=current_data["Position"])
 
 with col2:
-    # Farbanzeige statt Schieber
     gefahr = st.radio("Gefahrenstufe wählen", ["Grün", "Gelb", "ROT"], 
                       index=["Grün", "Gelb", "ROT"].index(current_data["Stufe"]), horizontal=True)
     
@@ -101,7 +99,7 @@ if st.session_state.inspections:
     for idx, item in enumerate(st.session_state.inspections):
         c_info, c_edit, c_del = st.columns([7, 2, 1])
         icon = "🟢" if item['Stufe'] == "Grün" else "🟡" if item['Stufe'] == "Gelb" else "🔴"
-        c_info.write(f"{icon} **#{idx+1} Regal {item['Regal']}** | {item['Bauteil']} ({item['Position']})")
+        c_info.write(f"{icon} **#{idx+1} Regal {item['Regal']}** | {item['Bauteil']} - {item['Position']}")
         if c_edit.button("✏️", key=f"e_{idx}"):
             st.session_state.edit_index = idx
             st.rerun()
@@ -121,6 +119,7 @@ if st.session_state.inspections:
         pdf.set_font("Arial", '', 14)
         pdf.cell(0, 10, f"Kunde: {kunde}", ln=True)
         pdf.cell(0, 10, f"Standort: {standort}", ln=True)
+        pdf.cell(0, 10, f"Prüfer: {inspektor}", ln=True)
         pdf.cell(0, 10, f"Datum: {datetime.now().strftime('%d.%m.%Y')}", ln=True)
         
         # 2. Inhaltsverzeichnis (Wird später befüllt)
@@ -132,39 +131,49 @@ if st.session_state.inspections:
         toc_entries = []
 
         # 3. Mängel-Details (Fortlaufend)
-        # Wir starten die erste Detailseite
         pdf.add_page()
-        
         for item in st.session_state.inspections:
             # Merken der Position für das Inhaltsverzeichnis
             toc_entries.append((item['Regal'], item['Stufe'], item['Bauteil'], item['Position'], pdf.page_no()))
             
-            # Prüfen ob genug Platz für den Block ist (ca. 80mm), sonst neue Seite
-            if pdf.get_y() > 200:
+            # Seitenumbruch-Check
+            if pdf.get_y() > 180:
                 pdf.add_page()
 
-            # Kopfzeile
+            # Balken-Header
             if item['Stufe'] == "ROT": pdf.set_fill_color(255, 200, 200)
             elif item['Stufe'] == "Gelb": pdf.set_fill_color(255, 243, 200)
             else: pdf.set_fill_color(200, 255, 200)
             
             pdf.set_font("Arial", 'B', 14)
-            pdf.cell(0, 12, f"REGAL: {item['Regal']} - {item['Stufe']}", ln=True, fill=True)
+            pdf.cell(0, 12, f"REGAL-NR: {item['Regal']} - STATUS: {item['Stufe']}", ln=True, fill=True)
+            
+            # --- DETAILS UNTEREINANDER ---
+            pdf.set_font("Arial", 'B', 11)
+            pdf.cell(40, 8, "Bauteil:", ln=0)
+            pdf.set_font("Arial", '', 11)
+            pdf.cell(0, 8, f"{item['Bauteil']}", ln=True)
             
             pdf.set_font("Arial", 'B', 11)
-            pdf.cell(0, 7, f"Bauteil: {item['Bauteil']} | Position: {item['Position']}", ln=True)
+            pdf.cell(40, 8, "Genaue Position:", ln=0)
             pdf.set_font("Arial", '', 11)
-            pdf.multi_cell(0, 6, f"Mangel: {item['Mangel']}\nMassnahme: {item['Massnahme']}")
+            pdf.cell(0, 8, f"{item['Position']}", ln=True)
             
+            pdf.set_font("Arial", 'B', 11)
+            pdf.cell(0, 8, "Mangel & Massnahme:", ln=True)
+            pdf.set_font("Arial", '', 11)
+            pdf.multi_cell(0, 6, f"{item['Mangel']}\nEmpfohlene Massnahme: {item['Massnahme']}")
+            
+            # Fotos
             if item['Fotos']:
                 pdf.ln(2)
                 y_imgs = pdf.get_y()
                 x_imgs = 10
                 for p in item['Fotos']:
                     if os.path.exists(p):
-                        pdf.image(p, x=x_imgs, y=y_imgs, w=45)
-                        x_imgs += 50
-                pdf.set_y(y_imgs + 40)
+                        pdf.image(p, x=x_imgs, y=y_imgs, w=48)
+                        x_imgs += 53
+                pdf.set_y(y_imgs + 42)
             
             pdf.ln(5)
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -181,9 +190,10 @@ if st.session_state.inspections:
             
             pdf.ellipse(10, pdf.get_y()+2, 4, 4, style='F')
             pdf.set_x(18)
+            # HIER STEHT JETZT REGAL, BAUTEIL UND POSITION IM VERZEICHNIS
             pdf.cell(0, 10, f"Regal {entry[0]}: {entry[2]} ({entry[3]})", ln=False)
             pdf.set_x(165)
             pdf.cell(0, 10, f"Seite {entry[4]}", ln=True)
 
         pdf_bytes = pdf.output(dest='S').encode('latin-1', 'replace')
-        st.download_button("📥 PDF herunterladen", data=pdf_bytes, file_name=f"Inspektion_{kunde}.pdf")
+        st.download_button("📥 PDF herunterladen", data=pdf_bytes, file_name=f"Bericht_{kunde}.pdf")
