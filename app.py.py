@@ -4,25 +4,28 @@ from fpdf import FPDF
 from datetime import datetime
 from PIL import Image
 import io
+import os
 
-# Konfiguration
+# Konfiguration der Seite
 st.set_page_config(page_title="Regal-Check Profi", layout="wide")
 
-# Speicher für die Sitzung
+# Speicher für die Sitzung initialisieren
 if 'inspections' not in st.session_state:
     st.session_state.inspections = []
 if 'edit_index' not in st.session_state:
     st.session_state.edit_index = None
 
-st.title("🛡️ Regal-Inspektion mit Statistik & Editor")
+st.title("🛡️ Regal-Inspektions-System")
 
 # --- STAMMDATEN ---
 with st.expander("📋 Kunden- & Standortdetails", expanded=True):
     c1, c2 = st.columns(2)
-    kunde = c1.text_input("Kunde / Firma", key="k_name")
-    standort = c1.text_input("Standort / Werk", key="k_ort")
-    gebaeude = c2.text_input("Halle / Bereich", key="k_halle")
-    inspektor = c2.text_input("Prüfer Name", key="k_pruefer")
+    with c1:
+        kunde = st.text_input("Kunde / Firma", key="k_name")
+        standort = st.text_input("Standort / Werk", key="k_ort")
+    with c2:
+        gebaeude = st.text_input("Halle / Bereich", key="k_halle")
+        inspektor = st.text_input("Prüfer Name", key="k_pruefer")
 
 # --- STATISTIK ---
 if st.session_state.inspections:
@@ -50,31 +53,31 @@ with col1:
     regal_nr = st.text_input("Regal-Nummer", value=data["Regal"])
     regal_typ = st.selectbox("Regalanlage", ["Palettenregal", "Fachbodenregal", "Kragarmregal", "Durchlaufregal", "Sonstiges"], index=0)
     bauteil = st.selectbox("Bauteil", ["Stütze", "Traverse", "Rammschutz", "Aussteifung"], index=0)
-    pos = st.text_input("Genaue Position", value=data["Position"], placeholder="z.B. Ebene 2, Feld 3")
+    pos = st.text_input("Genaue Position", value=data["Position"], placeholder="z.B. Ebene 2, von links")
 
 with col2:
-    # Bessere Farbauswahl als der rote Slider
     st.write("**Gefahrenstufe:**")
     gefahr = st.radio("Status wählen", ["Grün", "Gelb", "ROT"], index=["Grün", "Gelb", "ROT"].index(data["Stufe"]), horizontal=True)
     
-    mangel = st.selectbox("Hauptmangel", ["Stapleranprall", "Sicherungsstift fehlt", "Bodenanker lose", "Überladung", "Verformung", "Sonstiges"])
+    mangel = st.selectbox("Mangel", ["Stapleranprall", "Sicherungsstift fehlt", "Bodenanker lose", "Überladung", "Verformung", "Sonstiges"])
     kommentar = st.text_input("Zusatz-Kommentar", value=data.get("Mangel", "").split(": ")[-1] if ":" in data["Mangel"] else "")
     massnahme = st.selectbox("Maßnahme", ["Beobachten", "Tausch binnen 4 Wo.", "SOFORT SPERREN", "Stift ersetzen", "Anker nachziehen"])
 
 with col3:
-    st.write("📸 **Fotos**")
+    st.write("📸 **Dokumentation**")
     f1 = st.camera_input("1. Detailaufnahme", key="cam_1")
     f2 = st.camera_input("2. Übersicht", key="cam_2")
+    f3 = st.camera_input("3. Zusatzfoto", key="cam_3")
 
-# Speichern / Aktualisieren Buttons
+# Buttons für Speichern / Korrigieren
 btn_col1, btn_col2 = st.columns(2)
 if st.session_state.edit_index is None:
     if btn_col1.button("✅ Schaden speichern"):
         current_photos = []
-        for i, f in enumerate([f1, f2]):
+        for i, f in enumerate([f1, f2, f3]):
             if f:
                 img = Image.open(f).convert("RGB")
-                path = f"temp_img_{datetime.now().timestamp()}_{i}.jpg"
+                path = f"img_{datetime.now().timestamp()}_{i}.jpg"
                 img.save(path)
                 current_photos.append(path)
         
@@ -98,7 +101,7 @@ else:
 # --- LISTE UND PDF EXPORT ---
 if st.session_state.inspections:
     st.divider()
-    st.subheader("📋 Protokollierte Mängel")
+    st.subheader("📋 Erfasste Mängel")
     for idx, item in enumerate(st.session_state.inspections):
         c_info, c_edit = st.columns([8, 2])
         status_icon = "🟢" if item['Stufe'] == "Grün" else "🟡" if item['Stufe'] == "Gelb" else "🔴"
@@ -111,32 +114,33 @@ if st.session_state.inspections:
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
         
-        # --- SEITE 1: DECKBLATT & STATISTIK ---
+        # --- SEITE 1: DECKBLATT ---
         pdf.add_page()
-        pdf.set_font("Arial", 'B', 20)
-        pdf.cell(0, 20, "Inspektionsbericht Regalanlagen", ln=True, align='C')
+        pdf.set_font("Arial", 'B', 22)
+        pdf.cell(0, 30, "Inspektionsbericht Regalanlagen", ln=True, align='C')
         pdf.set_font("Arial", '', 12)
         pdf.cell(0, 10, f"Kunde: {kunde}", ln=True)
         pdf.cell(0, 10, f"Standort: {standort} | Bereich: {gebaeude}", ln=True)
         pdf.cell(0, 10, f"Prüfer: {inspektor} | Datum: {datetime.now().strftime('%d.%m.%Y')}", ln=True)
-        pdf.ln(20)
+        pdf.ln(15)
         
         pdf.set_font("Arial", 'B', 14)
         pdf.cell(0, 10, "Zusammenfassung der Ergebnisse:", ln=True)
         pdf.set_font("Arial", '', 12)
-        stats = pd.DataFrame(st.session_state.inspections)['Stufe'].value_counts()
+        stats_data = pd.DataFrame(st.session_state.inspections)['Stufe'].value_counts()
         pdf.cell(0, 8, f"- Gesamtanzahl der Prüfpunkte: {len(st.session_state.inspections)}", ln=True)
-        pdf.set_text_color(0, 128, 0)
-        pdf.cell(0, 8, f"- Grüne Gefahrenstufe (IO / Überwachung): {stats.get('Grün', 0)}", ln=True)
-        pdf.set_text_color(200, 150, 0)
-        pdf.cell(0, 8, f"- Gelbe Gefahrenstufe (Reparatur 4 Wo.): {stats.get('Gelb', 0)}", ln=True)
-        pdf.set_text_color(255, 0, 0)
-        pdf.cell(0, 8, f"- ROTE GEFAHRENSTUFE (SOFORT SPERREN): {stats.get('ROT', 0)}", ln=True)
+        pdf.set_text_color(0, 100, 0)
+        pdf.cell(0, 8, f"- Grüne Gefahrenstufe (IO / Überwachung): {stats_data.get('Grün', 0)}", ln=True)
+        pdf.set_text_color(200, 120, 0)
+        pdf.cell(0, 8, f"- Gelbe Gefahrenstufe (Reparatur 4 Wo.): {stats_data.get('Gelb', 0)}", ln=True)
+        pdf.set_text_color(200, 0, 0)
+        pdf.cell(0, 8, f"- ROTE GEFAHRENSTUFE (SOFORT SPERREN): {stats_data.get('ROT', 0)}", ln=True)
         pdf.set_text_color(0, 0, 0)
         
         # --- SEITE 2ff: DETAILS ---
         pdf.add_page()
         for item in st.session_state.inspections:
+            # Balkenfarbe setzen
             if item['Stufe'] == "ROT": pdf.set_fill_color(255, 200, 200)
             elif item['Stufe'] == "Gelb": pdf.set_fill_color(255, 243, 200)
             else: pdf.set_fill_color(200, 255, 200)
@@ -146,13 +150,17 @@ if st.session_state.inspections:
             pdf.set_font("Arial", '', 10)
             pdf.multi_cell(0, 6, f"Bauteil: {item['Bauteil']} | Position: {item['Position']}\nMangel: {item['Mangel']}\nMassnahme: {item['Massnahme']}")
             
+            # Bilder auf EINER Ebene nebeneinander
             if item['Fotos']:
                 pdf.ln(2)
-                x_pos = 10
-                for p in item['Fotos']:
-                    pdf.image(p, x=x_pos, w=40)
-                    x_pos += 45
-                pdf.ln(35)
+                y_img_start = pdf.get_y()
+                x_img_pos = 10
+                for p_path in item['Fotos']:
+                    if os.path.exists(p_path):
+                        pdf.image(p_path, x=x_img_pos, y=y_img_start, w=40)
+                        x_img_pos += 45
+                pdf.set_y(y_img_start + 32) # Cursor unter die Bildreihe setzen
+
             pdf.ln(5)
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(5)
