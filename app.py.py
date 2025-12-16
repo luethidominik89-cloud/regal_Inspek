@@ -4,48 +4,72 @@ from fpdf import FPDF
 from datetime import datetime
 from PIL import Image
 
-st.set_page_config(page_title="Regal-Check Profi", layout="wide")
+st.set_page_config(page_title="Regal-Check Profi Plus", layout="wide")
 
 if 'inspections' not in st.session_state:
     st.session_state.inspections = []
 
-st.title("🛡️ Präzise Regal-Inspektion")
+st.title("🛡️ Professionelle Regal-Inspektion")
 
-# --- STAMMDATEN ---
-with st.expander("📋 Stammdaten"):
+# --- ERWEITERTE STAMMDATEN ---
+with st.expander("📋 Kunden- & Standortdetails", expanded=True):
     c1, c2 = st.columns(2)
-    kunde = c1.text_input("Kunde")
-    inspektor = c2.text_input("Prüfer")
+    with c1:
+        kunde = st.text_input("Kunde / Firma")
+        standort = st.text_input("Standort (Stadt / Werk)")
+    with c2:
+        gebaeude = st.text_input("Gebäudeteil / Halle (z.B. Halle A, OG)")
+        inspektor = st.text_input("Prüfer")
 
-# --- ERWEITERTE SCHADENSAUFNAHME ---
+# --- SCHADENSAUFNAHME ---
 st.divider()
-st.subheader("⚠️ Detail-Erfassung")
+st.subheader("⚠️ Mängel-Erfassung")
 col1, col2, col3 = st.columns([1, 1, 1])
 
 with col1:
     regal_nr = st.text_input("Regal-Nummer (z.B. R-01)")
-    bauteil = st.selectbox("Bauteil", ["Stütze", "Traverse", "Rammschutz", "Aussteifung"])
+    bauteil = st.selectbox("Bauteil", ["Stütze", "Traverse", "Rammschutz", "Aussteifung", "Fachboden"])
     
-    # DYNAMISCHE FELDER je nach Bauteil
-    detail_position = ""
+    # Detail-Position
     if bauteil == "Stütze":
-        detail_position = st.text_input("Genaue Stütze", placeholder="z.B. Vorne rechts / 3. Stütze von links")
+        pos = st.text_input("Genaue Stütze", placeholder="z.B. vorne links")
     elif bauteil == "Traverse":
-        detail_position = st.text_input("Ebene / Position", placeholder="z.B. Ebene 2, zwischen Ständer A und B")
+        pos = st.text_input("Ebene / Position", placeholder="z.B. Ebene 2, Feld 3")
     else:
-        detail_position = st.text_input("Zusatz-Info zur Position")
+        pos = st.text_input("Zusatz-Info Position")
 
 with col2:
     gefahr = st.select_slider("Gefahrenstufe", options=["Grün", "Gelb", "ROT"], value="Grün")
-    ursache = st.text_input("Mangel / Ursache")
-    massnahme = st.text_area("Maßnahme")
+    
+    # DROP-DOWN FÜR GÄNGIGE MÄNGEL
+    mangel_liste = [
+        "Stapleranprall / Verformung",
+        "Fehlender Sicherungsstift",
+        "Riss in Schweißnaht",
+        "Lockerung der Bodenanker",
+        "Überladung / Durchbiegung",
+        "Sonstiges (siehe Kommentar)"
+    ]
+    mangel = st.selectbox("Art des Mangels", mangel_liste)
+    mangel_detail = st.text_input("Zusatzkommentar Mangel (optional)")
+
+    # DROP-DOWN FÜR MASSNAHMEN
+    massnahmen_liste = [
+        "Keine sofortige Maßnahme (Beobachtung)",
+        "Sicherungstifte ersetzen",
+        "Bauteil innerhalb 4 Wochen austauschen",
+        "SOFORTIGE SPERRUNG & Entladung",
+        "Bodenanker nachziehen",
+        "Fachlast reduzieren"
+    ]
+    gewaehlte_massnahme = st.selectbox("Erforderliche Maßnahme", massnahmen_liste)
 
 with col3:
-    foto = st.camera_input("Schaden fotografieren")
+    foto = st.camera_input("Foto aufnehmen")
 
-if st.button("Eintrag speichern"):
-    if not regal_nr or not detail_position:
-        st.error("Bitte Regal-Nummer und genaue Position angeben!")
+if st.button("Schaden speichern"):
+    if not regal_nr or not pos:
+        st.error("Bitte Regal-Nr. und Position angeben!")
     else:
         img_path = None
         if foto:
@@ -56,49 +80,54 @@ if st.button("Eintrag speichern"):
         st.session_state.inspections.append({
             "Regal": regal_nr,
             "Bauteil": bauteil,
-            "Position": detail_position,
+            "Position": pos,
             "Stufe": gefahr,
-            "Mangel": ursache,
-            "Massnahme": massnahme,
+            "Mangel": f"{mangel} ({mangel_detail})",
+            "Massnahme": gewaehlte_massnahme,
             "Foto": img_path
         })
-        st.success(f"Eintrag für {bauteil} an Position {detail_position} gespeichert.")
+        st.success("Eintrag erfolgreich hinzugefügt.")
 
-# --- BERICHTS-VORSCHAU & PDF ---
+# --- BERICHT & PDF ---
 if st.session_state.inspections:
     st.divider()
     df = pd.DataFrame(st.session_state.inspections).drop(columns=['Foto'])
     st.table(df)
 
-    if st.button("📄 PDF mit Details generieren"):
+    if st.button("📄 PDF-Prüfbericht generieren"):
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", 'B', 16)
-        pdf.cell(0, 10, f"Prüfbericht: {kunde}", ln=True, align='C')
-        pdf.ln(5)
+        pdf.cell(0, 10, "Regal-Inspektionsprotokoll", ln=True, align='C')
+        
+        pdf.set_font("Arial", size=10)
+        pdf.cell(0, 8, f"Kunde: {kunde} | Standort: {standort} | Bereich: {gebaeude}", ln=True, align='C')
+        pdf.ln(10)
 
         for item in st.session_state.inspections:
             pdf.set_fill_color(240, 240, 240)
             pdf.set_font("Arial", 'B', 11)
             
-            # Farb-Logik
-            color = (255, 0, 0) if item['Stufe'] == "ROT" else (200, 150, 0) if item['Stufe'] == "Gelb" else (0, 128, 0)
-            pdf.set_text_color(*color)
+            # Farbe für Gefahrenstufe
+            if item['Stufe'] == "ROT": pdf.set_text_color(255, 0, 0)
+            elif item['Stufe'] == "Gelb": pdf.set_text_color(200, 150, 0)
+            else: pdf.set_text_color(0, 128, 0)
             
-            pdf.cell(0, 10, f"REGAL: {item['Regal']} | {item['Bauteil']} ({item['Stufe']})", ln=True, fill=True)
+            pdf.cell(0, 10, f"REGAL: {item['Regal']} - Status: {item['Stufe']}", ln=True, fill=True)
             
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Arial", size=10)
-            pdf.multi_cell(0, 6, txt=(f"GENAUE POSITION: {item['Position']}\n"
-                                     f"MANGEL: {item['Mangel']}\n"
-                                     f"MASSNAHME: {item['Massnahme']}"))
+            content = (f"Bauteil/Position: {item['Bauteil']} - {item['Position']}\n"
+                       f"Mangel: {item['Mangel']}\n"
+                       f"Massnahme: {item['Massnahme']}")
+            pdf.multi_cell(0, 6, content)
             
             if item['Foto']:
                 pdf.image(item['Foto'], x=150, w=45)
             
-            pdf.ln(10)
+            pdf.ln(5)
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(5)
 
         pdf_bytes = pdf.output(dest='S').encode('latin-1', 'replace')
-        st.download_button("📥 PDF Herunterladen", data=pdf_bytes, file_name=f"Bericht_{kunde}.pdf")
+        st.download_button("📥 PDF-Bericht laden", data=pdf_bytes, file_name=f"Bericht_{kunde}_{standort}.pdf")
