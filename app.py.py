@@ -15,7 +15,7 @@ if 'inspections' not in st.session_state:
 if 'edit_index' not in st.session_state:
     st.session_state.edit_index = None
 
-# Funktion zum Zurücksetzen der Felder (indem man den Key-Counter erhöht)
+# Zähler für das Zurücksetzen der Formularfelder
 if 'form_iteration' not in st.session_state:
     st.session_state.form_iteration = 0
 
@@ -29,8 +29,8 @@ st.title("🛡️ Professionelle Regal-Inspektion")
 with st.expander("📋 Kunden- & Standortdetails", expanded=True):
     c_head1, c_head2 = st.columns(2)
     kunde = c_head1.text_input("Kunde / Firma", placeholder="z.B. Muster GmbH")
-    standort = c_head1.text_input("Standort / Werk", placeholder="z.B. Berlin Werk 2")
-    gebaeude = c_head2.text_input("Halle / Bereich", placeholder="z.B. Halle 4 / Wareneingang")
+    standort = c_head1.text_input("Standort", placeholder="z.B. Berlin")
+    gebaeude = c_head2.text_input("Gebäude / Werk / Halle", placeholder="z.B. Werk 2, Halle 4")
     inspektor = c_head2.text_input("Prüfer Name", placeholder="Dein Name")
 
 # --- EINGABEMASKE ---
@@ -39,7 +39,6 @@ if st.session_state.edit_index is not None:
     st.warning(f"🔄 Bearbeitung: Eintrag #{st.session_state.edit_index + 1}")
     current_data = st.session_state.inspections[st.session_state.edit_index]
 else:
-    # Standardwerte für ein leeres Formular
     current_data = {"Regal": "", "Typ": "Palettenregal", "Bauteil": "Stütze", "Position": "", "Stufe": "Grün", "Mangel": "Stapleranprall", "Massnahme": "Beobachten", "Fotos": []}
 
 # Nutze den iteration_key um Felder nach dem Speichern zu leeren
@@ -65,8 +64,9 @@ with col2:
     gefahr = st.radio("Status", ["Grün", "Gelb", "ROT"], 
                       index=["Grün", "Gelb", "ROT"].index(current_data["Stufe"]), 
                       horizontal=True, key=f"stufe_{iter_key}")
-    mangel = st.selectbox("Hauptmangel", ["Stapleranprall", "Sicherungsstift fehlt", "Bodenanker lose", "Überladung", "Verformung", "Sonstiges"], key=f"mangel_{iter_key}")
-    kommentar = st.text_input("Zusatz-Kommentar (Vorschlag)", placeholder="z.B. Delle > 3mm", key=f"kommentar_{iter_key}")
+    mangel_opt = ["Stapleranprall", "Sicherungsstift fehlt", "Bodenanker lose", "Überladung", "Verformung", "Sonstiges"]
+    mangel = st.selectbox("Hauptmangel", mangel_opt, key=f"mangel_{iter_key}")
+    kommentar = st.text_input("Zusatz-Kommentar", placeholder="z.B. Delle > 3mm", key=f"kommentar_{iter_key}")
     massnahme = st.selectbox("Maßnahme", ["Beobachten", "Tausch binnen 4 Wo.", "SOFORT SPERREN", "Stift ersetzen", "Anker nachziehen"], key=f"mass_{iter_key}")
 
 with col3:
@@ -129,7 +129,8 @@ if st.session_state.inspections:
         pdf.cell(0, 40, "Inspektionsbericht Regalanlagen", ln=True, align='C')
         pdf.set_font("Arial", '', 14)
         pdf.cell(0, 10, f"Kunde: {kunde}", ln=True)
-        pdf.cell(0, 10, f"Standort: {standort} | Prüfer: {inspektor}", ln=True)
+        pdf.cell(0, 10, f"Standort: {standort} | Bereich: {gebaeude}", ln=True)
+        pdf.cell(0, 10, f"Prüfer: {inspektor} | Datum: {datetime.now().strftime('%d.%m.%Y')}", ln=True)
         pdf.ln(10)
         
         for item in st.session_state.inspections:
