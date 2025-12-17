@@ -8,61 +8,56 @@ import os
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Regal-Check Profi", layout="wide")
 
-# Google Sheets Anbindung versuchen
-try:
-    from streamlit_gsheets import GSheetsConnection
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    HAS_GSHEETS = True
-except Exception:
-    HAS_GSHEETS = False
+# Google Sheets Anbindung versuchen (Fehlertolerant)
+def get_customer_list():
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="Kunden", ttl="1m")
+        return df["Kunde"].tolist()
+    except:
+        # Falls Cloud-Verbindung scheitert, leere Liste
+        return []
 
 # Session State initialisieren
 if 'inspections' not in st.session_state:
     st.session_state.inspections = []
 if 'form_iteration' not in st.session_state:
     st.session_state.form_iteration = 0
+if 'temp_customers' not in st.session_state:
+    st.session_state.temp_customers = []
 
 def reset_form():
     st.session_state.form_iteration += 1
 
-# --- KUNDENVERWALTUNG (GOOGLE SHEETS ODER LOKAL) ---
+# --- KUNDENVERWALTUNG ---
 st.sidebar.title("🏢 Kundenverwaltung")
 
-if HAS_GSHEETS:
-    try:
-        df_kunden = conn.read(worksheet="Kunden", ttl="1m")
-    except:
-        df_kunden = pd.DataFrame(columns=["Kunde"])
-    
-    new_cust = st.sidebar.text_input("Neuen Kunden anlegen")
-    if st.sidebar.button("➕ Kunde speichern"):
-        if new_cust and new_cust not in df_kunden["Kunde"].values:
-            new_entry = pd.DataFrame([{"Kunde": new_cust}])
-            updated_df = pd.concat([df_kunden, new_entry], ignore_index=True)
-            # Hier passiert der Schreibvorgang (benötigt "Editor"-Rechte im Link!)
-            try:
-                conn.update(worksheet="Kunden", data=updated_df)
-                st.sidebar.success("Kunde gespeichert!")
-                st.rerun()
-            except Exception as e:
-                st.sidebar.error("Fehler beim Speichern. Prüfe, ob das Google Sheet auf 'Editor' steht!")
-    
-    selected_customer = st.sidebar.selectbox("Kunde wählen", ["---"] + df_kunden["Kunde"].tolist())
-else:
-    # Fallback falls Google Sheets nicht konfiguriert ist
-    selected_customer = st.sidebar.text_input("Kunde / Firma manuell", placeholder="z.B. Muster GmbH")
+# Lade Kunden aus Google Sheets + manuell hinzugefügte
+cloud_customers = get_customer_list()
+all_available_customers = sorted(list(set(cloud_customers + st.session_state.temp_customers)))
+
+selected_customer = st.sidebar.selectbox("Bestehenden Kunden wählen", ["---"] + all_available_customers)
+
+st.sidebar.divider()
+new_cust_input = st.sidebar.text_input("Neuen Kunden hinzufügen", placeholder="Name der Firma")
+if st.sidebar.button("➕ Hinzufügen"):
+    if new_cust_input and new_cust_input not in all_available_customers:
+        st.session_state.temp_customers.append(new_cust_input)
+        st.sidebar.success(f"{new_cust_input} wurde geladen!")
+        st.rerun()
 
 # --- HAUPTSEITE ---
 if not selected_customer or selected_customer == "---":
     st.title("🛡️ Regal-Check System")
-    st.info("Bitte wählen Sie einen Kunden aus oder legen Sie einen neuen an.")
-else:
+    st.info("Bitte wählen Sie links einen Kunden aus oder fügen Sie einen neuen hinzu.")
+    else:
     st.title(f"Inspektion: {selected_customer}")
     
     with st.expander("📍 Standort & Kopfdaten", expanded=True):
         c1, c2 = st.columns(2)
         standort = c1.text_input("Standort (Stadt)", placeholder="z.B. Berlin")
-        gebaeude = c1.text_input("Gebäude / Werk / Halle", placeholder="z.B. Halle 4")
+        gebaeude = c1.text_input("Gebäude / Werk / Halle", placeholder="z.B. Halle 4, Werk West")
         inspektor = c2.text_input("Prüfer Name", placeholder="Dein Name")
         datum_heute = c2.date_input("Prüfdatum", datetime.now())
 
@@ -76,10 +71,9 @@ else:
     with col1:
         regal_nr = st.text_input("Regal-Nummer", placeholder="z.B. R-001", key=f"r_{it}")
         bauteil = st.selectbox("Bauteil", ["Stütze", "Traverse", "Rammschutz", "Aussteifung"], key=f"b_{it}")
-        pos = st.text_input("Position / Ebene / Feld", placeholder="z.B. Feld 5", key=f"p_{it}")
+        pos = st.text_input("Position / Ebene / Feld", placeholder="z.B. Feld 5, E3", key=f"p_{it}")
 
     with col2:
-        # Kein Slider, sondern klare Auswahl (Status-Fix)
         st.write("**Gefahrenstufe:**")
         gefahr = st.radio("Status", ["Grün", "Gelb", "ROT"], horizontal=True, key=f"s_{it}")
         mangel = st.selectbox("Mangel", ["Stapleranprall", "Sicherungsstift fehlt", "Bodenanker lose", "Überladung", "Sonstiges"], key=f"m_{it}")
@@ -89,7 +83,7 @@ else:
     with col3:
         f1 = st.camera_input("1. Detail (Schaden)", key=f"f1_{it}")
         f2 = st.camera_input("2. Standort (Übersicht)", key=f"f2_{it}")
-        f3 = st.camera_input("3. Sonstiges", key=f"f3_{it}")
+        f3 = st.camera_input("3. Traglastschild", key=f"f3_{it}")
 
     if st.button("✅ Regal zur Liste hinzufügen", use_container_width=True):
         if not regal_nr:
@@ -114,7 +108,7 @@ else:
     # --- BERICHT & PDF ---
     if st.session_state.inspections:
         st.divider()
-        st.subheader("📋 Aktuelle Mängelliste")
+        st.subheader("📋 Aktuelle Mängelliste dieser Sitzung")
         for idx, item in enumerate(st.session_state.inspections):
             icon = "🟢" if item['Stufe'] == "Grün" else "🟡" if item['Stufe'] == "Gelb" else "🔴"
             st.write(f"{icon} **Regal {item['Regal']}** - {item['Bauteil']} ({item['Position']})")
@@ -132,7 +126,7 @@ else:
             pdf.cell(0, 10, f"Standort: {standort} | Bereich: {gebaeude}", ln=True)
             pdf.cell(0, 10, f"Datum: {datum_heute.strftime('%d.%m.%Y')}", ln=True)
             
-            # Inhaltsverzeichnis (Fix für Bild 2/3)
+            # Inhaltsverzeichnis (Seite 2)
             pdf.add_page()
             pdf.set_font("Arial", 'B', 18)
             pdf.cell(0, 15, "Inhaltsverzeichnis", ln=True)
@@ -141,35 +135,57 @@ else:
 
             # Details
             for item in st.session_state.inspections:
-                pdf.add_page()
-                toc_data.append((item['Regal'], item['Stufe'], pdf.page_no()))
+                # Prüfen, ob für neuen Eintrag genug Platz ist (ca. 80mm), sonst neue Seite
+                if pdf.get_y() > 180:
+                    pdf.add_page()
+                
+                # Merken für Verzeichnis
+                toc_data.append((item['Regal'], item['Stufe'], item['Bauteil'], item['Position'], pdf.page_no()))
                 
                 if item['Stufe'] == "ROT": pdf.set_fill_color(255, 200, 200)
                 elif item['Stufe'] == "Gelb": pdf.set_fill_color(255, 243, 200)
                 else: pdf.set_fill_color(200, 255, 200)
                 
-                pdf.set_font("Arial", 'B', 16)
+                pdf.set_font("Arial", 'B', 14)
                 pdf.cell(0, 12, f"Regal: {item['Regal']} - Status: {item['Stufe']}", ln=True, fill=True)
-                pdf.set_font("Arial", '', 12)
-                pdf.cell(0, 8, f"Bauteil: {item['Bauteil']} | Position: {item['Position']}", ln=True)
-                pdf.multi_cell(0, 7, f"Mangel: {item['Mangel']}\nMassnahme: {item['Massnahme']}")
+                pdf.set_font("Arial", 'B', 11)
+                pdf.cell(40, 8, "Bauteil / Position:", ln=0)
+                pdf.set_font("Arial", '', 11)
+                pdf.cell(0, 8, f"{item['Bauteil']} ({item['Position']})", ln=True)
+                
+                pdf.set_font("Arial", 'B', 11)
+                pdf.cell(0, 8, "Beschreibung & Massnahme:", ln=True)
+                pdf.set_font("Arial", '', 11)
+                pdf.multi_cell(0, 6, f"{item['Mangel']}\nMassnahme: {item['Massnahme']}")
                 
                 if item['Fotos']:
-                    pdf.ln(5)
+                    pdf.ln(2)
                     y, x = pdf.get_y(), 10
                     for f in item['Fotos']:
                         if os.path.exists(f):
-                            pdf.image(f, x=x, y=y, w=55)
-                            x += 60
+                            pdf.image(f, x=x, y=y, w=45)
+                            x += 50
+                    pdf.set_y(y + 42)
                 
-            # Inhaltsverzeichnis füllen
+                pdf.ln(5)
+                pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+                pdf.ln(5)
+                
+            # Inhaltsverzeichnis füllen (Nachträglich auf Seite 2)
             pdf.page = 2
             pdf.set_y(35)
-            pdf.set_font("Arial", '', 12)
+            pdf.set_font("Arial", '', 11)
             for t in toc_data:
-                pdf.cell(0, 10, f"Regal {t[0]} ({t[1]})", ln=False)
+                # Farblicher Punkt
+                if t[1] == "ROT": pdf.set_fill_color(255, 0, 0)
+                elif t[1] == "Gelb": pdf.set_fill_color(255, 243, 0)
+                else: pdf.set_fill_color(0, 255, 0)
+                pdf.ellipse(10, pdf.get_y()+2, 4, 4, style='F')
+                
+                pdf.set_x(18)
+                pdf.cell(0, 10, f"Regal {t[0]}: {t[2]} ({t[3]})", ln=False)
                 pdf.set_x(170)
-                pdf.cell(0, 10, f"Seite {t[2]}", ln=True)
+                pdf.cell(0, 10, f"Seite {t[4]}", ln=True)
 
             pdf_out = pdf.output(dest='S').encode('latin-1', 'replace')
             st.download_button("📥 PDF Herunterladen", data=pdf_out, file_name=f"Bericht_{selected_customer}.pdf")
