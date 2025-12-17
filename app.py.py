@@ -15,15 +15,15 @@ if 'inspections' not in st.session_state:
 if 'edit_index' not in st.session_state:
     st.session_state.edit_index = None
 
-st.title("🛡️ Regal-Inspektions-Bericht")
+st.title("🛡️ Professionelle Regal-Inspektion")
 
 # --- STAMMDATEN ---
 with st.expander("📋 Kunden- & Standortdetails", expanded=True):
     c_head1, c_head2 = st.columns(2)
-    kunde = c_head1.text_input("Kunde / Firma", key="k_name_input")
-    standort = c_head1.text_input("Standort / Werk", key="k_ort_input")
-    gebaeude = c_head2.text_input("Halle / Bereich", key="k_halle_input")
-    inspektor = c_head2.text_input("Prüfer Name", key="k_pruefer_input")
+    kunde = c_head1.text_input("Kunde / Firma", placeholder="z.B. Muster GmbH", key="k_name_input")
+    standort = c_head1.text_input("Standort / Werk", placeholder="z.B. Berlin Werk 2", key="k_ort_input")
+    gebaeude = c_head2.text_input("Halle / Bereich", placeholder="z.B. Halle 4 / Wareneingang", key="k_halle_input")
+    inspektor = c_head2.text_input("Prüfer Name", placeholder="Dein Name", key="k_pruefer_input")
 
 # --- EINGABEMASKE ---
 st.divider()
@@ -36,31 +36,44 @@ else:
 col1, col2, col3 = st.columns([1, 1, 1])
 
 with col1:
-    regal_nr = st.text_input("Regal-Nummer", value=current_data["Regal"])
+    regal_nr = st.text_input("Regal-Nummer", value=current_data["Regal"], placeholder="z.B. R-001")
     regal_typ = st.selectbox("Regalanlage", ["Palettenregal", "Fachbodenregal", "Kragarmregal", "Durchlaufregal", "Sonstiges"], index=0)
     bauteil = st.selectbox("Bauteil", ["Stütze", "Traverse", "Rammschutz", "Aussteifung"], index=0)
-    pos = st.text_input("Position / Ebene / Feld", value=current_data["Position"])
+    
+    # Dynamische Platzhalter je nach Bauteil
+    if bauteil == "Stütze":
+        p_hold = "z.B. Pfosten vorne links"
+    elif bauteil == "Traverse":
+        p_hold = "z.B. Ebene 3, Feld 10"
+    else:
+        p_hold = "Genaue Lagebeschreibung"
+    pos = st.text_input("Position / Ebene / Feld", value=current_data["Position"], placeholder=p_hold)
 
 with col2:
-    # Farbwahl über Buttons statt Slider
     st.write("**Gefahrenstufe:**")
     gefahr = st.radio("Status", ["Grün", "Gelb", "ROT"], index=["Grün", "Gelb", "ROT"].index(current_data["Stufe"]), horizontal=True)
-    mangel = st.selectbox("Mangel", ["Stapleranprall", "Sicherungsstift fehlt", "Bodenanker lose", "Überladung", "Sonstiges"])
-    kommentar = st.text_input("Zusatz-Kommentar", value=current_data.get("Mangel", "").split(": ")[-1] if ":" in current_data["Mangel"] else "")
-    massnahme = st.selectbox("Maßnahme", ["Beobachten", "Tausch binnen 4 Wo.", "SOFORT SPERREN", "Stift ersetzen"])
+    mangel = st.selectbox("Hauptmangel", ["Stapleranprall", "Sicherungsstift fehlt", "Bodenanker lose", "Überladung", "Verformung", "Sonstiges"])
+    kommentar = st.text_input("Zusatz-Kommentar (Vorschlag)", value=current_data.get("Mangel", "").split(": ")[-1] if ":" in current_data["Mangel"] else "", placeholder="z.B. Delle > 3mm")
+    massnahme = st.selectbox("Maßnahme", ["Beobachten", "Tausch binnen 4 Wo.", "SOFORT SPERREN", "Stift ersetzen", "Anker nachziehen"])
 
 with col3:
-    st.write("📸 **Fotos**")
-    f1 = st.camera_input("Foto 1", key="cam1")
-    f2 = st.camera_input("Foto 2", key="cam2")
+    st.write("📸 **Fotodokumentation**")
+    f1 = st.camera_input("1. Detailaufnahme (Schaden)", key="cam_detail")
+    f2 = st.camera_input("2. Standortaufnahme (Übersicht)", key="cam_standort")
+    f3 = st.camera_input("3. Traglastschild / Sonstiges", key="cam_schild")
 
 # --- SPEICHERN ---
 if st.button("✅ Eintrag speichern", use_container_width=True):
     if not regal_nr:
         st.error("Bitte Regal-Nummer angeben!")
     else:
-        new_photos = current_data.get("Fotos", [])
-        for f in [f1, f2]:
+        # Fotos verarbeiten
+        new_photos = []
+        # Wenn wir bearbeiten, behalten wir alte Fotos bei, außer neue werden gemacht
+        if st.session_state.edit_index is not None:
+            new_photos = current_data.get("Fotos", [])
+            
+        for f in [f1, f2, f3]:
             if f:
                 img = Image.open(f).convert("RGB")
                 path = f"img_{datetime.now().timestamp()}.jpg"
@@ -82,19 +95,19 @@ if st.button("✅ Eintrag speichern", use_container_width=True):
 # --- AUFZÄHLUNG IN DER APP ---
 if st.session_state.inspections:
     st.divider()
-    st.subheader("📋 Erfasste Punkte")
+    st.subheader("📋 Aktuelle Mängelliste")
     for idx, item in enumerate(st.session_state.inspections):
         c_i, c_e, c_d = st.columns([7, 2, 1])
         icon = "🟢" if item['Stufe'] == "Grün" else "🟡" if item['Stufe'] == "Gelb" else "🔴"
         c_i.write(f"{icon} **#{idx+1} Regal {item['Regal']}** | {item['Bauteil']} ({item['Position']})")
-        if c_e.button("✏️", key=f"e_{idx}"):
+        if c_e.button("✏️", key=f"edit_{idx}"):
             st.session_state.edit_index = idx
             st.rerun()
-        if c_d.button("🗑️", key=f"d_{idx}"):
+        if c_d.button("🗑️", key=f"del_{idx}"):
             st.session_state.inspections.pop(idx)
             st.rerun()
 
-    # --- PDF GENERIERUNG (OHNE VERZEICHNIS) ---
+    # --- PDF GENERIERUNG ---
     if st.button("📄 PDF-Bericht erstellen", type="primary", use_container_width=True):
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=20)
@@ -109,13 +122,12 @@ if st.session_state.inspections:
         pdf.cell(0, 10, f"Prüfer: {inspektor} | Datum: {datetime.now().strftime('%d.%m.%Y')}", ln=True)
         pdf.ln(10)
         
-        # Aufzählung der Mängel
+        # Mängel-Details
         for item in st.session_state.inspections:
-            # Check für Seitenumbruch
-            if pdf.get_y() > 180:
+            if pdf.get_y() > 160: # Platz-Check für Block + Bilder
                 pdf.add_page()
 
-            # Kopfzeile
+            # Balken-Farbe
             if item['Stufe'] == "ROT": pdf.set_fill_color(255, 200, 200)
             elif item['Stufe'] == "Gelb": pdf.set_fill_color(255, 243, 200)
             else: pdf.set_fill_color(200, 255, 200)
@@ -123,36 +135,35 @@ if st.session_state.inspections:
             pdf.set_font("Arial", 'B', 14)
             pdf.cell(0, 12, f"REGAL: {item['Regal']} - STATUS: {item['Stufe']}", ln=True, fill=True)
             
-            # Details untereinander
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(40, 8, "Bauteil:", ln=0)
+            pdf.cell(45, 8, "Bauteil:", ln=0)
             pdf.set_font("Arial", '', 12)
             pdf.cell(0, 8, f"{item['Bauteil']}", ln=True)
             
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(40, 8, "Position:", ln=0)
+            pdf.cell(45, 8, "Position / Ebene:", ln=0)
             pdf.set_font("Arial", '', 12)
             pdf.cell(0, 8, f"{item['Position']}", ln=True)
             
             pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 8, "Mangel & Massnahme:", ln=True)
+            pdf.cell(0, 8, "Schadensbeschreibung:", ln=True)
             pdf.set_font("Arial", '', 11)
             pdf.multi_cell(0, 7, f"{item['Mangel']}\nMassnahme: {item['Massnahme']}")
             
-            # Fotos
+            # Bilder auf einer Ebene nebeneinander
             if item['Fotos']:
                 pdf.ln(3)
-                y_img = pdf.get_y()
-                x_img = 10
-                for p in item['Fotos']:
+                y_imgs = pdf.get_y()
+                x_imgs = 10
+                for p in item['Fotos'][:3]: # Max 3 Bilder
                     if os.path.exists(p):
-                        pdf.image(p, x=x_img, y=y_img, w=48)
-                        x_img += 53
-                pdf.set_y(y_img + 42)
+                        pdf.image(p, x=x_imgs, y=y_imgs, w=45)
+                        x_imgs += 50
+                pdf.set_y(y_imgs + 42)
             
             pdf.ln(5)
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(10)
 
         pdf_bytes = pdf.output(dest='S').encode('latin-1', 'replace')
-        st.download_button("📥 PDF herunterladen", data=pdf_bytes, file_name=f"Bericht_{kunde}.pdf")
+        st.download_button("📥 PDF Herunterladen", data=pdf_bytes, file_name=f"Bericht_{kunde}.pdf")
